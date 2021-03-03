@@ -28,6 +28,9 @@ function CiSENode(gm, loc, size, vNode)
 
     // Cytoscape node ID for transforming between layout and cytoscape
     this.ID = null;
+
+    this.egressionAmount = null;
+    
 }
 
 CiSENode.prototype = Object.create(FDLayoutNode.prototype);
@@ -56,6 +59,17 @@ CiSENode.prototype.setId = function(ID){
 CiSENode.prototype.getId = function(){
     return this.ID;
 };
+
+CiSENode.prototype.getEgressionAmount = function(){
+
+    return this.egressionAmount;
+};
+
+CiSENode.prototype.setEgressionAmount = function(egressionAmount){
+    this.egressionAmount = egressionAmount;
+};
+
+
 
 /**
  * This method sets this node as an on-circle node by creating an extension for it.

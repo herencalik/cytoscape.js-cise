@@ -39,6 +39,12 @@ function CiSECircle(parent, graphMgr, vNode) {
     // Holds the nodes which are inside the circle
     this.inCircleNodes = [];
 
+    // The additional node seperation value is used to store the value of extra space 
+    // induced by adding more inner nodes than the circle can fit in. Although the circle
+    // is enlarged by increasing the radius, the positions of the on-circle nodes
+    // have to be recalculated with respect to the proportion of increase in circumference.
+    this.additionalNodeSeparation = null;
+
     // The radius of this circle, calculated with respect to the dimensions of
     // the nodes on this circle and node separation options
     this.radius = 0;
@@ -58,6 +64,10 @@ function CiSECircle(parent, graphMgr, vNode) {
     // special circumstances (e.g. less than two inter-cluster edge) are set as
     // may not be reversed as well.
     this.mayBeReversed = true;
+
+    this.innerNodePushCount = null;
+
+    this.expansionCount = null;
 }
 
 CiSECircle.prototype = Object.create(LGraph.prototype);
@@ -77,6 +87,45 @@ CiSECircle.prototype.setRadius = function(radius) {
 // This method sets the radius of this circle.
 CiSECircle.prototype.getRadius = function() {
     return this.radius;
+};
+
+// This method sets the additional node seperation value.
+CiSECircle.prototype.setAdditionalNodeSeparation = function(additionalNodeSeparation) {
+    this.additionalNodeSeparation = additionalNodeSeparation;
+};
+
+// This method returns the additional node seperation value.
+CiSECircle.prototype.getAdditionalNodeSeparation = function() {
+    if(this.additionalNodeSeparation === null) //If this is called the first time
+    {
+        this.setAdditionalNodeSeparation(0.0);
+    }
+    return this.additionalNodeSeparation;
+};
+
+
+CiSECircle.prototype.setInnerNodePushCount = function(innerNodePushCount) {
+    this.innerNodePushCount = innerNodePushCount;
+};
+
+CiSECircle.prototype.getInnerNodePushCount = function() {
+    if(this.innerNodePushCount === null)
+    {
+        this.setInnerNodePushCount(0);
+    }
+    return this.innerNodePushCount;
+};
+
+CiSECircle.prototype.setExpansionCount = function(expansionCount) {
+    this.expansionCount = expansionCount;
+};
+
+CiSECircle.prototype.getExpansionCount = function() {
+    if(this.expansionCount === null)
+    {
+        this.setExpansionCount(0);
+    }
+    return this.innerNodexpansionCount;
 };
 
 // This method returns nodes that don't have neighbors outside this circle.
@@ -390,7 +439,7 @@ CiSECircle.prototype.swapNodes = function(first, second){
     let smallIndexPrevNode = smallIndexNodeExt.getPrevNode();
 
     let layout = this.getGraphManager().getLayout();
-    let nodeSeparation = layout.getNodeSeparation();
+    let nodeSeparation = layout.getNodeSeparation() + this.getAdditionalNodeSeparation();
 
     let angle = (smallIndexPrevNode.getOnCircleNodeExt().getAngle() +
                 (smallIndexPrevNode.getHalfTheDiagonal() +
@@ -629,7 +678,8 @@ CiSECircle.prototype.moveOnCircleNodeInside = function(node) {
     //calculateNodePositions
     this.reCalculateNodeAnglesAndPositions();
 
-    node.setCenter(this.getParent().getCenterX(), this.getParent().getCenterY());
+    node.setCenter(this.getParent().getCenterX() + this.getRadius() * (Math.random() - 0.5),
+     this.getParent().getCenterY() + this.getRadius() * (Math.random() - 0.5));
 };
 
 /**
@@ -649,13 +699,57 @@ CiSECircle.prototype.reCalculateCircleSizeAndRadius = function () {
     }
 
     let layout = this.getGraphManager().getLayout();
-    let nodeSeparation = layout.getNodeSeparation();
+    let nodeSeparation = layout.getNodeSeparation() + this.getAdditionalNodeSeparation();
 
     let perimeter = totalDiagonal + this.getOnCircleNodes().length * nodeSeparation;
     this.radius = perimeter / (2 * Math.PI);
     this.calculateParentNodeDimension();
 };
 
+
+
+CiSECircle.prototype.reCalculateNodePositions = function () {
+
+    let layout = this.getGraphManager().getLayout();
+    let nodeSeparation = layout.getNodeSeparation() + this.getAdditionalNodeSeparation();
+
+    // It is important that we sort these on-circle nodes in place.
+    let inOrderCopy = this.onCircleNodes;
+    inOrderCopy.sort(function(a, b) {
+        return a.getOnCircleNodeExt().getIndex() - b.getOnCircleNodeExt().getIndex();
+    });
+
+    let parentCenterX = this.getParent().getCenterX();
+    let parentCenterY = this.getParent().getCenterY();
+
+    for (let i = 0; i < inOrderCopy.length; i++)
+    {
+        let node = inOrderCopy[i];
+        let angle;
+
+        if (i === 0)
+        {
+            let dy = node.getCenterY() - parentCenterY;
+            let dx = node.getCenterX() - parentCenterX;
+            angle = Math.atan2(dy, dx); // range (-PI, PI]
+            if (angle < 0) angle += 360;
+            angle *= 180 / Math.PI;
+        }
+        else
+        {
+            let previousNode =  inOrderCopy[i - 1];
+
+            // => angle in radian = (2*PI)*(circular distance/(2*PI*r))
+            angle = previousNode.getOnCircleNodeExt().getAngle() +
+                    (node.getHalfTheDiagonal() + nodeSeparation + previousNode.getHalfTheDiagonal()) / this.radius;
+            if (angle > 360) angle -= 360;
+        }
+
+        node.getOnCircleNodeExt().setAngle(angle);
+        node.setCenter(parentCenterX + this.radius * Math.cos(angle),
+                       parentCenterY + this.radius * Math.sin(angle));
+    }
+};
 /**
  * This method goes over all on-circle nodes and re-calculates their angles
  * and corresponding positions. This method should be called when on-circle
@@ -663,7 +757,7 @@ CiSECircle.prototype.reCalculateCircleSizeAndRadius = function () {
  */
 CiSECircle.prototype.reCalculateNodeAnglesAndPositions = function () {
     let layout = this.getGraphManager().getLayout();
-    let nodeSeparation = layout.getNodeSeparation();
+    let nodeSeparation = layout.getNodeSeparation() + this.getAdditionalNodeSeparation();
 
     // It is important that we sort these on-circle nodes in place.
     let inOrderCopy = this.onCircleNodes;
